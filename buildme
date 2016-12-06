@@ -9,15 +9,17 @@ fi
 BUILDSUBDIR=`echo $BUILDTYPE | tr [A-Z] [a-z]`;
 
 if [ "armv6l" = `arch` ] || [ "armv7l" = `arch` ]; then
+if [ -n "$BUILD_WAYLAND" ]; then
+   WAYLAND_VARS="-DBUILD_WAYLAND=TRUE"
+fi
+
+if [ "armv6l" = `arch` ]; then
 	# Native compile on the Raspberry Pi
 	mkdir -p build/raspberry/$BUILDSUBDIR
 	pushd build/raspberry/$BUILDSUBDIR
-	cmake -DCMAKE_BUILD_TYPE=$BUILDTYPE ../../..
-	if [ "armv6l" = `arch` ]; then
-		make
-	else
-		make -j4
-	fi
+    cmake -DCMAKE_BUILD_TYPE=Release $WAYLAND_VARS ../../..
+    make
+
 	if [ "$1" != "" ]; then
 	 sudo make install DESTDIR=$1
 	else
