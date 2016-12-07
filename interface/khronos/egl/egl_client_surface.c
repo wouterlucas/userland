@@ -46,6 +46,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/khronos/egl/egl_int_impl.h"
 #endif
 
+#ifdef BUILD_WAYLAND
+#include "interface/khronos/wayland-egl/wayland-egl-priv.h"
+#include "interface/khronos/common/linux/khrn_wayland.h"
+#endif
+
 #include <stdlib.h>
 
 
@@ -325,6 +330,10 @@ EGL_SURFACE_T *egl_surface_create(
    EGLint   config_depth_bits;
    EGLint   config_stencil_bits;
    CLIENT_THREAD_STATE_T *thread = CLIENT_GET_THREAD_STATE();
+#ifdef BUILD_WAYLAND
+   struct wl_display *wl_display = khrn_platform_get_wl_display();
+   DISPMANX_RESOURCE_HANDLE_T resource;
+#endif
 
    EGL_SURFACE_T *surface = egl_surface_pool_alloc();
 
@@ -388,6 +397,19 @@ EGL_SURFACE_T *egl_surface_create(
    egl_config_get_attrib(configid, EGL_STENCIL_SIZE, &config_stencil_bits);
 
    vcos_assert(color != IMAGE_FORMAT_INVALID);
+
+#ifdef BUILD_WAYLAND
+   if (type == WINDOW && wl_display) {
+      surface->wl_egl_window = (struct wl_egl_window*)win;
+      surface->back_wl_buffer = allocate_wl_buffer(
+            surface->wl_egl_window, color);
+      resource = surface->back_wl_buffer->resource;
+   } else {
+      surface->wl_egl_window = NULL;
+      resource = DISPMANX_NO_HANDLE;
+   }
+#endif
+
 
 #ifdef KHRONOS_EGL_PLATFORM_OPENWFC
    // Create stream for this window
@@ -641,6 +663,18 @@ void egl_surface_free(EGL_SURFACE_T *surface)
    if( surface->type == WINDOW ) {
       vcos_log_trace("egl_surface_free: calling platform_destroy_winhandle...");
       platform_destroy_winhandle( surface->win, surface->internal_handle );
+
+#ifdef BUILD_WAYLAND
+      if (surface->back_wl_buffer) {
+         wl_buffer_destroy(surface->back_wl_buffer->wl_buffer);
+         free(surface->back_wl_buffer);
+      }
+
+      if (surface->front_wl_buffer) {
+         wl_buffer_destroy(surface->front_wl_buffer->wl_buffer);
+         free(surface->front_wl_buffer);
+      }
+#endif
    }
    /* return value ignored -- read performed to ensure blocking. we want this to
     * block so clients can safely destroy the surface's window as soon as the
@@ -767,7 +801,7 @@ EGLint egl_surface_set_attrib(EGL_SURFACE_T *surface, EGLint attrib, EGLint valu
    case EGL_MIPMAP_LEVEL:
       if (surface->type == PBUFFER) {
          RPC_CALL2(eglIntSelectMipmap_impl,
-                   thread, 
+                   thread,
                    EGLINTSELECTMIPMAP_ID,
                    RPC_UINT(surface->serverbuffer),
                    RPC_INT(value));
